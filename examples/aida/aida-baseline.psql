@@ -1,0 +1,143 @@
+CREATE TABLE "docentes" (
+    "docente" text,
+    "apellido" text NOT NULL,
+    "nombres" text NOT NULL,
+    "cargo" text,
+    "email" text,
+    "email_alternativo" text,
+    "jefe" text,
+    PRIMARY KEY ("docente")
+);
+
+CREATE TABLE "materias" (
+    "materia" text,
+    "denominacion" text NOT NULL,
+    PRIMARY KEY ("materia"),
+    CONSTRAINT "uk_materias_denominacion" UNIQUE ("denominacion")
+);
+
+CREATE TABLE "periodos" (
+    "periodo" text,
+    PRIMARY KEY ("periodo")
+);
+
+CREATE TABLE "cursos" (
+    "periodo" text,
+    "materia" text,
+    "docente" text,
+    PRIMARY KEY ("periodo", "materia")
+);
+
+CREATE TABLE "clases" (
+    "periodo" text,
+    "materia" text,
+    "orden" integer,
+    "fecha" date,
+    "tema" text,
+    PRIMARY KEY ("periodo", "materia", "orden")
+);
+
+CREATE TABLE "alumnos" (
+    "alumno" text,
+    "apellido" text NOT NULL,
+    "nombres" text NOT NULL,
+    "email" text,
+    PRIMARY KEY ("alumno")
+);
+
+CREATE TABLE "preguntas" (
+    "periodo" text,
+    "materia" text,
+    "orden" integer,
+    "pregunta" integer,
+    "formulacion" text NOT NULL,
+    "aclaraciones" text,
+    "tipo_respuesta" text NOT NULL,
+    PRIMARY KEY ("periodo", "materia", "orden", "pregunta")
+);
+
+CREATE TABLE "opciones" (
+    "periodo" text,
+    "materia" text,
+    "orden" integer,
+    "pregunta" integer,
+    "opcion" text,
+    "detalle" text,
+    PRIMARY KEY ("periodo", "materia", "orden", "pregunta", "opcion")
+);
+
+CREATE TABLE "inscripciones" (
+    "periodo" text,
+    "materia" text,
+    "alumno" text,
+    PRIMARY KEY ("periodo", "materia", "alumno")
+);
+
+CREATE TABLE "presencias" (
+    "periodo" text,
+    "materia" text,
+    "alumno" text,
+    "orden" integer,
+    PRIMARY KEY ("periodo", "materia", "alumno", "orden")
+);
+
+CREATE TABLE "mesas" (
+    "periodo" text,
+    "materia" text,
+    "fecha" date,
+    "presidente" text,
+    "vocal" text,
+    PRIMARY KEY ("periodo", "materia", "fecha")
+);
+
+ALTER TABLE "docentes" ADD CONSTRAINT "fk_docentes_jefe" FOREIGN KEY ("jefe") REFERENCES "docentes" ("docente");
+
+ALTER TABLE "cursos" ADD CONSTRAINT "fk_cursos_periodos" FOREIGN KEY ("periodo") REFERENCES "periodos" ("periodo");
+
+ALTER TABLE "cursos" ADD CONSTRAINT "fk_cursos_materias" FOREIGN KEY ("materia") REFERENCES "materias" ("materia");
+
+ALTER TABLE "cursos" ADD CONSTRAINT "fk_cursos_responsable" FOREIGN KEY ("docente") REFERENCES "docentes" ("docente");
+
+ALTER TABLE "clases" ADD CONSTRAINT "fk_clases_cursos" FOREIGN KEY ("periodo", "materia") REFERENCES "cursos" ("periodo", "materia");
+
+ALTER TABLE "preguntas" ADD CONSTRAINT "fk_preguntas_clases" FOREIGN KEY ("periodo", "materia", "orden") REFERENCES "clases" ("periodo", "materia", "orden");
+
+ALTER TABLE "opciones" ADD CONSTRAINT "fk_opciones_preguntas" FOREIGN KEY ("periodo", "materia", "orden", "pregunta") REFERENCES "preguntas" ("periodo", "materia", "orden", "pregunta");
+
+ALTER TABLE "inscripciones" ADD CONSTRAINT "fk_inscripciones_cursos" FOREIGN KEY ("periodo", "materia") REFERENCES "cursos" ("periodo", "materia");
+
+ALTER TABLE "inscripciones" ADD CONSTRAINT "fk_inscripciones_alumnos" FOREIGN KEY ("alumno") REFERENCES "alumnos" ("alumno");
+
+ALTER TABLE "presencias" ADD CONSTRAINT "fk_presencias_inscripciones" FOREIGN KEY ("periodo", "materia", "alumno") REFERENCES "inscripciones" ("periodo", "materia", "alumno");
+
+ALTER TABLE "presencias" ADD CONSTRAINT "fk_presencias_clases" FOREIGN KEY ("periodo", "materia", "orden") REFERENCES "clases" ("periodo", "materia", "orden");
+
+ALTER TABLE "mesas" ADD CONSTRAINT "fk_mesas_cursos" FOREIGN KEY ("periodo", "materia") REFERENCES "cursos" ("periodo", "materia");
+
+ALTER TABLE "mesas" ADD CONSTRAINT "fk_mesas_presidente" FOREIGN KEY ("presidente") REFERENCES "docentes" ("docente");
+
+ALTER TABLE "mesas" ADD CONSTRAINT "fk_mesas_vocal" FOREIGN KEY ("vocal") REFERENCES "docentes" ("docente");
+
+COMMENT ON COLUMN "docentes"."jefe" IS 'jefe de cátedra (otro docente)';
+
+COMMENT ON COLUMN "materias"."denominacion" IS 'si corresponde a más de una carrera, aclarar en el nombre';
+
+COMMENT ON COLUMN "periodos"."periodo" IS 'bimestre, cuatrimestre, etc...';
+
+COMMENT ON COLUMN "cursos"."periodo" IS 'bimestre, cuatrimestre, etc...';
+
+COMMENT ON COLUMN "clases"."periodo" IS 'bimestre, cuatrimestre, etc...';
+
+COMMENT ON COLUMN "preguntas"."periodo" IS 'bimestre, cuatrimestre, etc...';
+
+COMMENT ON COLUMN "preguntas"."formulacion" IS 'texto principal de la pregunta';
+
+COMMENT ON COLUMN "preguntas"."aclaraciones" IS 'texto que no necesita repetirse cuando se quiera referir a una pregunta por su formulación, pero que es necesario para aclarar el contexto o posibles ambigüedades de la pregunta';
+
+COMMENT ON COLUMN "opciones"."periodo" IS 'bimestre, cuatrimestre, etc...';
+
+COMMENT ON COLUMN "inscripciones"."periodo" IS 'bimestre, cuatrimestre, etc...';
+
+COMMENT ON COLUMN "presencias"."periodo" IS 'bimestre, cuatrimestre, etc...';
+
+COMMENT ON COLUMN "mesas"."periodo" IS 'bimestre, cuatrimestre, etc...';

@@ -141,3 +141,10 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# regenerated snapshots kept out of the committed baseline
+local-*
+*-local.*
+
+# build output
+dist/
