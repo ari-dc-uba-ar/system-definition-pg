@@ -1,0 +1,16 @@
+{
+    "compilerOptions": {
+        "declaration": true,
+        "outDir": "dist",
+        "module": "nodenext",
+        "target": "es2022",
+        "sourceMap": true,
+        "strict": true,
+        "types": ["node", "mocha"]
+    },
+    "include": [
+        "src/**/*.ts",
+        "examples/**/*.ts",
+        "test/**/*.ts"
+    ]
+}
