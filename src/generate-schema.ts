@@ -1,7 +1,8 @@
 import {
-    EntityDef, EntityInfo, FieldInfo, TypeCollection, completeEntity,
+    EntityDef, EntityInfo, FieldInfo, TypeCollection,
 } from "system-definition";
 
+import { completeEntities } from "./entity-infos";
 import { PgTypeMap } from "./pg-type-map";
 import { quoteIdent, quoteLiteral } from "./quoting";
 
@@ -52,12 +53,10 @@ export function generateCommentStatements<TypeDefs extends TypeCollection>(
 export function generateDatabaseScript<TypeDefs extends TypeCollection>(
     entityDefs: Record<string, EntityDef<TypeDefs>>, pgTypeMap: PgTypeMap<TypeDefs>
 ): string {
-    var entities = Object.entries(entityDefs).map(
-        ([name, entityDef]) => [name, completeEntity(entityDef as EntityDef<TypeCollection>)] as [string, EntityInfo<TypeDefs>]
-    );
-    var createTables = entities.map(([name, info]) => generateCreateTableStatement(name, info, pgTypeMap));
-    var foreignKeys = entities.flatMap(([name, info]) => generateForeignKeyStatements(name, info));
-    var comments = entities.flatMap(([name, info]) => generateCommentStatements(name, info));
+    var entries = Object.entries(completeEntities(entityDefs));
+    var createTables = entries.map(([name, info]) => generateCreateTableStatement(name, info, pgTypeMap));
+    var foreignKeys = entries.flatMap(([name, info]) => generateForeignKeyStatements(name, info));
+    var comments = entries.flatMap(([name, info]) => generateCommentStatements(name, info));
     var sections = [createTables, foreignKeys, comments].filter(section => section.length > 0);
     return sections.map(section => section.join('\n\n')).join('\n\n') + '\n';
 }

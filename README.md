@@ -76,6 +76,37 @@ app.get('/docentes/:id', async (req, res) => {
   `changes`; throws if `changes` has nothing to set.
 * `deleteByPk(pk)` — `DELETE ... RETURNING *`.
 
+### Bringing in referenced names
+
+Pass the whole system's entities as a third argument and `selectByPk`/`selectWhere` will
+`LEFT JOIN` every fk whose target entity has a field marked `isName: true`, bringing that
+field along aliased as `"<fkName>_<nameField>"`:
+
+```ts
+import { completeEntities, createCrudQueries } from "system-definition-pg";
+import { entityDefs } from "./my-system"; // cursos.fks.materias -> materias, and materias.denominacion has isName: true
+
+const entityInfos = completeEntities(entityDefs);
+const cursosQueries = createCrudQueries('cursos', entityInfos.cursos, entityInfos);
+
+const { text, values } = cursosQueries.selectByPk({periodo: '2026-1c', materia: 'AlgoI'});
+// SELECT "cursos".*, "materias"."denominacion" AS "materias_denominacion"
+// FROM "cursos" LEFT JOIN "materias" AS "materias" ON "materias"."materia" = "cursos"."materia"
+// WHERE "cursos"."periodo" = $1 AND "cursos"."materia" = $2;
+```
+
+The fk name (not the target table name) is used as the join alias, so two fks to the same
+entity — `mesas.presidente` and `mesas.vocal`, both → `docentes` — get distinct joins and
+column aliases (`presidente_nombre`, `vocal_nombre`); this also makes a reflexive fk (e.g.
+`docentes.jefe` → `docentes`) an unambiguous self-join. A fk whose target has no `isName`
+field (not every entity needs a human-readable name — `periodos` in the example above
+doesn't) is simply not joined. `entityInfos` is optional; without it, `selectByPk` and
+`selectWhere` behave exactly as before.
+
+This is a runtime-only convenience for now: `SqlQuery` still has no row type, so the joined
+columns aren't reflected in `Instance`/the function types yet — typing that (a shape that
+depends on which fks resolve to a name at the value level) is left for later.
+
 
 ## Design decisions
 
@@ -102,13 +133,15 @@ app.get('/docentes/:id', async (req, res) => {
 ## Structure
 
 * `src/`: the generator — `quoting.ts` (identifier/literal escaping), `pg-type-map.ts` (the
-  `PgTypeMap` type), `generate-schema.ts` (DDL statement generators), `sql-query.ts` (the
-  `SqlQuery` type), `crud-queries.ts` (`createCrudQueries`), `index.ts` (public exports).
+  `PgTypeMap` type), `entity-infos.ts` (`completeEntities`, the `EntityInfoMap` type),
+  `generate-schema.ts` (DDL statement generators), `sql-query.ts` (the `SqlQuery` type),
+  `crud-queries.ts` (`createCrudQueries`), `index.ts` (public exports).
 * `examples/aida/`: uses the `aida` example system shipped with `system-definition` to
   generate `examples/aida/aida-baseline.psql`, a full, real-world-shaped baseline script.
   Run `npm run generate-baseline` to regenerate it.
-* `test/`: mocha tests for each generator piece (DDL and CRUD), plus a snapshot test that
-  regenerates the aida script and diffs it against the committed baseline.
+* `test/`: mocha tests for each generator piece (DDL and CRUD, including the referred-name
+  joins), plus a snapshot test that regenerates the aida script and diffs it against the
+  committed baseline.
 
 
 ## Development
