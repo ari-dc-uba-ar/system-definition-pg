@@ -76,6 +76,58 @@ app.get('/docentes/:id', async (req, res) => {
   `changes`; throws if `changes` has nothing to set.
 * `deleteByPk(pk)` — `DELETE ... RETURNING *`.
 
+### Bringing in referenced names
+
+Pass the whole system's entities as a third argument and every generator — `selectByPk`,
+`selectWhere`, and also `insert`/`updateByPk`/`deleteByPk`'s `RETURNING` — will `LEFT JOIN`
+every fk whose target entity has field(s) marked `isName: true`, bringing each of them along
+aliased as `"<fkName><separator><nameField>"` (separator defaults to `__`; a record can mark
+more than one field `isName`, e.g. a person's `apellido` and `nombres`):
+
+```ts
+import { completeEntities, createCrudQueries } from "system-definition-pg";
+import { entityDefs } from "./my-system"; // cursos.fks.materias -> materias, and materias.denominacion has isName: true
+
+const entityInfos = completeEntities(entityDefs);
+const cursosQueries = createCrudQueries('cursos', entityInfos.cursos, entityInfos);
+// createCrudQueries(tableName, entityInfo, entityInfos?, separator = '__')
+
+const { text, values } = cursosQueries.selectByPk({periodo: '2026-1c', materia: 'AlgoI'});
+// SELECT "cursos".*, "materias"."denominacion" AS "materias__denominacion"
+// FROM "cursos" LEFT JOIN "materias" AS "materias" ON "materias"."materia" = "cursos"."materia"
+// WHERE "cursos"."periodo" = $1 AND "cursos"."materia" = $2;
+```
+
+The fk name (not the target table name) is used as the join alias, so two fks to the same
+entity — `mesas.presidente` and `mesas.vocal`, both → `docentes` — get distinct joins and
+column aliases (`presidente__nombre`, `vocal__nombre`); this also makes a reflexive fk (e.g.
+`docentes.jefe` → `docentes`) an unambiguous self-join. A fk whose target has no `isName`
+field (not every entity needs a human-readable name — `periodos` in the example above
+doesn't) is simply not joined. A record can mark more than one field `isName` too (e.g. a
+person's `apellido` and `nombres`): every one of them gets its own joined column.
+`entityInfos` is optional; without it, every generator behaves exactly as before, regardless
+of `separator`.
+
+`RETURNING` can only see the mutated table's own columns — it can't join. So when
+`insert`/`updateByPk`/`deleteByPk` would otherwise need a join, they fall back to
+`RETURNING` just the pk instead of `*`; call `selectByPk` with that pk to get the same
+joined row `selectByPk` always returns. Two round trips, but the join logic only lives in
+one place:
+
+```ts
+const { text, values } = cursosQueries.insert({periodo: '2026-1c', materia: 'AlgoI', docente: 'D1'});
+// INSERT INTO "cursos" (...) VALUES (...) RETURNING "periodo", "materia";
+const { rows: [pk] } = await pool.query(text, values);
+const enriched = await pool.query(...cursosQueries.selectByPk(pk));
+// enriched.rows[0].materias__denominacion is now available
+```
+
+Unchanged (`RETURNING *`, one round trip) when there's nothing to join, exactly as before.
+
+This is a runtime-only convenience for now: `SqlQuery` still has no row type, so the joined
+columns aren't reflected in `Instance`/the function types yet — typing that (a shape that
+depends on which fks resolve to a name at the value level) is left for later.
+
 
 ## Design decisions
 
@@ -102,13 +154,15 @@ app.get('/docentes/:id', async (req, res) => {
 ## Structure
 
 * `src/`: the generator — `quoting.ts` (identifier/literal escaping), `pg-type-map.ts` (the
-  `PgTypeMap` type), `generate-schema.ts` (DDL statement generators), `sql-query.ts` (the
-  `SqlQuery` type), `crud-queries.ts` (`createCrudQueries`), `index.ts` (public exports).
+  `PgTypeMap` type), `entity-infos.ts` (`completeEntities`, the `EntityInfoMap` type),
+  `generate-schema.ts` (DDL statement generators), `sql-query.ts` (the `SqlQuery` type),
+  `crud-queries.ts` (`createCrudQueries`), `index.ts` (public exports).
 * `examples/aida/`: uses the `aida` example system shipped with `system-definition` to
   generate `examples/aida/aida-baseline.psql`, a full, real-world-shaped baseline script.
   Run `npm run generate-baseline` to regenerate it.
-* `test/`: mocha tests for each generator piece (DDL and CRUD), plus a snapshot test that
-  regenerates the aida script and diffs it against the committed baseline.
+* `test/`: mocha tests for each generator piece (DDL and CRUD, including the referred-name
+  joins), plus a snapshot test that regenerates the aida script and diffs it against the
+  committed baseline.
 
 
 ## Development
