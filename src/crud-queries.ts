@@ -4,10 +4,6 @@ import { EntityInfoMap } from "./entity-infos";
 import { quoteIdent } from "./quoting";
 import { SqlQuery } from "./sql-query";
 
-// the CTE alias every insert/update/delete wraps its RETURNING row as, when it needs to join
-// referred names onto it. Reserved: an entity, fk or field literally named this would collide.
-var MUTATED_ROW_ALIAS = '_mutated_row';
-
 function placeholder(values: unknown[], value: unknown): string {
     values.push(value);
     return '$' + values.length;
@@ -53,14 +49,17 @@ function referredNameJoins<TypeDefs extends TypeCollection>(
    interpolated into the SQL text, so the result is safe to run as-is against any driver
    that accepts (text, values), inside a program or behind an HTTP endpoint.
 
-   entityInfos (optional) is the rest of the system: when given, every generator LEFT JOINs
-   every fk whose target has isName field(s), bringing each of them along, aliased as
-   "<fkName><separator><nameField>" (e.g. "materias__denominacion" for cursos.fks.materias).
-   insert/updateByPk/deleteByPk can't join inline (RETURNING only sees the mutated table's own
-   columns), so when a join is needed they wrap the statement as a CTE and SELECT the joined
-   result from it instead of a bare "... RETURNING *". Typing that extra, data-dependent shape
-   onto the result is left for later: for now the join is a runtime-only convenience, same as
-   every other query built here (SqlQuery has no row type). */
+   entityInfos (optional) is the rest of the system: when given, selectByPk/selectWhere
+   LEFT JOIN every fk whose target has isName field(s), bringing each of them along, aliased
+   as "<fkName><separator><nameField>" (e.g. "materias__denominacion" for cursos.fks.materias).
+
+   RETURNING can only see the mutated table's own columns — it can't join. So instead of
+   duplicating the join logic there, insert/updateByPk/deleteByPk fall back to RETURNING just
+   the pk when a join would otherwise be needed; call selectByPk with that pk to get the same
+   joined row selectByPk always returns. Two round trips, but one code path for the join.
+   Unchanged (RETURNING *) when there's nothing to join. Typing the joined columns onto the
+   result is left for later: for now this is a runtime-only convenience, same as every other
+   query built here (SqlQuery has no row type). */
 export function createCrudQueries<
     TypeDefs extends TypeCollection,
     const TEntityInfo extends EntityInfo<TypeDefs>,
@@ -76,33 +75,26 @@ export function createCrudQueries<
         return entityInfo.pk.map(name => quoteIdent(name) + ' = ' + placeholder(values, pkRecord[name]));
     }
 
-    function referredColumns(): string[] {
-        return nameJoins.flatMap(join => join.nameFields.map(nameField =>
-            quoteIdent(join.fkName) + '.' + quoteIdent(nameField) + ' AS ' + quoteIdent(join.fkName + separator + nameField)
-        ));
-    }
-
-    // leftAlias is the table the join conditions read the fk's own column from: the base
-    // table itself for a plain select, or the CTE alias when wrapping a mutation's RETURNING
-    function joinClauses(leftAlias: string): string {
-        return nameJoins.map(join => {
-            var onClause = Object.entries(join.sourceToTargetFields)
-                .map(([sourceField, targetField]) =>
-                    quoteIdent(join.fkName) + '.' + quoteIdent(targetField) + ' = ' + quoteIdent(leftAlias) + '.' + quoteIdent(sourceField)
-                )
-                .join(' AND ');
-            return ' LEFT JOIN ' + quoteIdent(join.targetTable) + ' AS ' + quoteIdent(join.fkName) + ' ON ' + onClause;
-        }).join('');
-    }
-
     // the plain forms (no joins) keep emitting bare "*"/"table" exactly as before, unaffected by entityInfos
     function selectColumns(): string {
         if (nameJoins.length === 0) return '*';
-        return [quoteIdent(tableName) + '.*', ...referredColumns()].join(', ');
+        var referredColumns = nameJoins.flatMap(join => join.nameFields.map(nameField =>
+            quoteIdent(join.fkName) + '.' + quoteIdent(nameField) + ' AS ' + quoteIdent(join.fkName + separator + nameField)
+        ));
+        return [quoteIdent(tableName) + '.*', ...referredColumns].join(', ');
     }
 
     function selectFrom(): string {
-        return nameJoins.length === 0 ? quoteIdent(tableName) : quoteIdent(tableName) + joinClauses(tableName);
+        if (nameJoins.length === 0) return quoteIdent(tableName);
+        var joins = nameJoins.map(join => {
+            var onClause = Object.entries(join.sourceToTargetFields)
+                .map(([sourceField, targetField]) =>
+                    quoteIdent(join.fkName) + '.' + quoteIdent(targetField) + ' = ' + quoteIdent(tableName) + '.' + quoteIdent(sourceField)
+                )
+                .join(' AND ');
+            return ' LEFT JOIN ' + quoteIdent(join.targetTable) + ' AS ' + quoteIdent(join.fkName) + ' ON ' + onClause;
+        });
+        return quoteIdent(tableName) + joins.join('');
     }
 
     // once there's a join, the base table's own columns need qualifying: a self-referencing
@@ -111,18 +103,10 @@ export function createCrudQueries<
         return nameJoins.length === 0 ? quoteIdent(name) : quoteIdent(tableName) + '.' + quoteIdent(name);
     }
 
-    // wraps an insert/update/delete's core statement (no RETURNING yet) so its result also
-    // carries the referred names: "... RETURNING *;" when there's nothing to join (unchanged
-    // from before), or "WITH alias AS (... RETURNING *) SELECT alias.*, joined... FROM alias
-    // LEFT JOIN ...;" when there is.
-    function returningStatement(coreStatement: string): string {
-        if (nameJoins.length === 0) {
-            return coreStatement + ' RETURNING *;';
-        }
-        var alias = quoteIdent(MUTATED_ROW_ALIAS);
-        var columns = [alias + '.*', ...referredColumns()].join(', ');
-        return 'WITH ' + alias + ' AS (' + coreStatement + ' RETURNING *)'
-            + ' SELECT ' + columns + ' FROM ' + alias + joinClauses(MUTATED_ROW_ALIAS) + ';';
+    // "... RETURNING *;" when there's nothing to join (unchanged from before); when there is,
+    // RETURNING can't join, so it falls back to just the pk — re-fetch with selectByPk(pk) for the joined row
+    function returningClause(): string {
+        return nameJoins.length === 0 ? ' RETURNING *;' : ' RETURNING ' + entityInfo.pk.map(quoteIdent).join(', ') + ';';
     }
 
     function selectByPk(pkValues: PkValues): SqlQuery {
@@ -152,8 +136,10 @@ export function createCrudQueries<
         }
         var columns = entries.map(([name]) => quoteIdent(name));
         var placeholders = entries.map(([, value]) => placeholder(values, value));
-        var coreStatement = 'INSERT INTO ' + quoteIdent(tableName) + ' (' + columns.join(', ') + ') VALUES (' + placeholders.join(', ') + ')';
-        return {text: returningStatement(coreStatement), values};
+        return {
+            text: 'INSERT INTO ' + quoteIdent(tableName) + ' (' + columns.join(', ') + ') VALUES (' + placeholders.join(', ') + ')' + returningClause(),
+            values,
+        };
     }
 
     function updateByPk(pkValues: PkValues, changes: Partial<Omit<Instance, PkFields>>): SqlQuery {
@@ -164,15 +150,16 @@ export function createCrudQueries<
         }
         var setClause = entries.map(([name, value]) => quoteIdent(name) + ' = ' + placeholder(values, value));
         var conditions = pkConditions(values, pkValues);
-        var coreStatement = 'UPDATE ' + quoteIdent(tableName) + ' SET ' + setClause.join(', ') + ' WHERE ' + conditions.join(' AND ');
-        return {text: returningStatement(coreStatement), values};
+        return {
+            text: 'UPDATE ' + quoteIdent(tableName) + ' SET ' + setClause.join(', ') + ' WHERE ' + conditions.join(' AND ') + returningClause(),
+            values,
+        };
     }
 
     function deleteByPk(pkValues: PkValues): SqlQuery {
         var values: unknown[] = [];
         var conditions = pkConditions(values, pkValues);
-        var coreStatement = 'DELETE FROM ' + quoteIdent(tableName) + ' WHERE ' + conditions.join(' AND ');
-        return {text: returningStatement(coreStatement), values};
+        return {text: 'DELETE FROM ' + quoteIdent(tableName) + ' WHERE ' + conditions.join(' AND ') + returningClause(), values};
     }
 
     return {selectByPk, selectWhere, insert, updateByPk, deleteByPk};
