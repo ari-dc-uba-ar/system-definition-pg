@@ -80,7 +80,7 @@ app.get('/docentes/:id', async (req, res) => {
 
 Pass the whole system's entities as a third argument and `selectByPk`/`selectWhere` will
 `LEFT JOIN` every fk whose target entity has a field marked `isName: true`, bringing that
-field along aliased as `"<fkName>_<nameField>"`:
+field along aliased as `"<fkName><separator><nameField>"` (separator defaults to `__`):
 
 ```ts
 import { completeEntities, createCrudQueries } from "system-definition-pg";
@@ -88,20 +88,21 @@ import { entityDefs } from "./my-system"; // cursos.fks.materias -> materias, an
 
 const entityInfos = completeEntities(entityDefs);
 const cursosQueries = createCrudQueries('cursos', entityInfos.cursos, entityInfos);
+// createCrudQueries(tableName, entityInfo, entityInfos?, separator = '__')
 
 const { text, values } = cursosQueries.selectByPk({periodo: '2026-1c', materia: 'AlgoI'});
-// SELECT "cursos".*, "materias"."denominacion" AS "materias_denominacion"
+// SELECT "cursos".*, "materias"."denominacion" AS "materias__denominacion"
 // FROM "cursos" LEFT JOIN "materias" AS "materias" ON "materias"."materia" = "cursos"."materia"
 // WHERE "cursos"."periodo" = $1 AND "cursos"."materia" = $2;
 ```
 
 The fk name (not the target table name) is used as the join alias, so two fks to the same
 entity — `mesas.presidente` and `mesas.vocal`, both → `docentes` — get distinct joins and
-column aliases (`presidente_nombre`, `vocal_nombre`); this also makes a reflexive fk (e.g.
+column aliases (`presidente__nombre`, `vocal__nombre`); this also makes a reflexive fk (e.g.
 `docentes.jefe` → `docentes`) an unambiguous self-join. A fk whose target has no `isName`
 field (not every entity needs a human-readable name — `periodos` in the example above
 doesn't) is simply not joined. `entityInfos` is optional; without it, `selectByPk` and
-`selectWhere` behave exactly as before.
+`selectWhere` behave exactly as before, regardless of `separator`.
 
 This is a runtime-only convenience for now: `SqlQuery` still has no row type, so the joined
 columns aren't reflected in `Instance`/the function types yet — typing that (a shape that

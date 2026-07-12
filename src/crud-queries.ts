@@ -51,13 +51,14 @@ function referredNameJoins<TypeDefs extends TypeCollection>(
 
    entityInfos (optional) is the rest of the system: when given, select queries LEFT JOIN
    every fk whose target has an isName field, and bring that field along, aliased as
-   "<fkName>_<nameField>" (e.g. "materias_denominacion" for cursos.fks.materias). Typing
-   that extra, data-dependent shape onto the result is left for later: for now the join is a
-   runtime-only convenience, same as every other query built here (SqlQuery has no row type). */
+   "<fkName><separator><nameField>" (e.g. "materias__denominacion" for cursos.fks.materias).
+   Typing that extra, data-dependent shape onto the result is left for later: for now the
+   join is a runtime-only convenience, same as every other query built here (SqlQuery has no
+   row type). */
 export function createCrudQueries<
     TypeDefs extends TypeCollection,
     const TEntityInfo extends EntityInfo<TypeDefs>,
->(tableName: string, entityInfo: TEntityInfo, entityInfos?: EntityInfoMap<TypeDefs>) {
+>(tableName: string, entityInfo: TEntityInfo, entityInfos?: EntityInfoMap<TypeDefs>, separator: string = '__') {
     type Instance = InstanceType<TypeDefs, TEntityInfo['fields']>
     type PkFields = TEntityInfo['pk'][number] & keyof Instance
     type PkValues = Pick<Instance, PkFields>
@@ -73,7 +74,7 @@ export function createCrudQueries<
     function selectColumns(): string {
         if (nameJoins.length === 0) return '*';
         var referredColumns = nameJoins.map(join =>
-            quoteIdent(join.fkName) + '.' + quoteIdent(join.nameField) + ' AS ' + quoteIdent(join.fkName + '_' + join.nameField)
+            quoteIdent(join.fkName) + '.' + quoteIdent(join.nameField) + ' AS ' + quoteIdent(join.fkName + separator + join.nameField)
         );
         return [quoteIdent(tableName) + '.*', ...referredColumns].join(', ');
     }

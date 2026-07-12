@@ -56,7 +56,7 @@ describe("createCrudQueries: referred isName joins", function(){
         var queries = createCrudQueries('cursos', entityInfos.cursos, entityInfos);
         var query = queries.selectByPk({periodo: '2026-1c', materia: 'AlgoI'});
         assert.deepStrictEqual(query, {
-            text: 'SELECT "cursos".*, "materias"."denominacion" AS "materias_denominacion"'
+            text: 'SELECT "cursos".*, "materias"."denominacion" AS "materias__denominacion"'
                 + ' FROM "cursos" LEFT JOIN "materias" AS "materias" ON "materias"."materia" = "cursos"."materia"'
                 + ' WHERE "cursos"."periodo" = $1 AND "cursos"."materia" = $2;',
             values: ['2026-1c', 'AlgoI'],
@@ -68,7 +68,7 @@ describe("createCrudQueries: referred isName joins", function(){
         var queries = createCrudQueries('cursos', entityInfos.cursos, entityInfos);
         var query = queries.selectWhere({materia: 'AlgoI'});
         assert.deepStrictEqual(query, {
-            text: 'SELECT "cursos".*, "materias"."denominacion" AS "materias_denominacion"'
+            text: 'SELECT "cursos".*, "materias"."denominacion" AS "materias__denominacion"'
                 + ' FROM "cursos" LEFT JOIN "materias" AS "materias" ON "materias"."materia" = "cursos"."materia"'
                 + ' WHERE "cursos"."materia" = $1;',
             values: ['AlgoI'],
@@ -78,7 +78,7 @@ describe("createCrudQueries: referred isName joins", function(){
         var queries = createCrudQueries('mesas', entityInfos.mesas, entityInfos);
         var query = queries.selectByPk({mesa: 'M1'});
         assert.deepStrictEqual(query, {
-            text: 'SELECT "mesas".*, "presidente"."nombre" AS "presidente_nombre", "vocal"."nombre" AS "vocal_nombre"'
+            text: 'SELECT "mesas".*, "presidente"."nombre" AS "presidente__nombre", "vocal"."nombre" AS "vocal__nombre"'
                 + ' FROM "mesas"'
                 + ' LEFT JOIN "docentes" AS "presidente" ON "presidente"."docente" = "mesas"."presidente"'
                 + ' LEFT JOIN "docentes" AS "vocal" ON "vocal"."docente" = "mesas"."vocal"'
@@ -90,7 +90,7 @@ describe("createCrudQueries: referred isName joins", function(){
         var queries = createCrudQueries('docentes', entityInfos.docentes, entityInfos);
         var query = queries.selectByPk({docente: 'D2'});
         assert.deepStrictEqual(query, {
-            text: 'SELECT "docentes".*, "jefe"."nombre" AS "jefe_nombre"'
+            text: 'SELECT "docentes".*, "jefe"."nombre" AS "jefe__nombre"'
                 + ' FROM "docentes" LEFT JOIN "docentes" AS "jefe" ON "jefe"."docente" = "docentes"."jefe"'
                 + ' WHERE "docentes"."docente" = $1;',
             values: ['D2'],
@@ -101,7 +101,12 @@ describe("createCrudQueries: referred isName joins", function(){
         var queries = createCrudQueries('cursos', entityInfos.cursos, partialEntityInfos);
         // only the materias fk can be resolved; the periodos fk's target is missing, so it's skipped too (it has no isName anyway)
         var query = queries.selectByPk({periodo: '2026-1c', materia: 'AlgoI'});
-        assert.match(query.text, /"materias_denominacion"/);
+        assert.match(query.text, /"materias__denominacion"/);
+    })
+    it("accepts a custom separator for the joined column alias", function(){
+        var queries = createCrudQueries('cursos', entityInfos.cursos, entityInfos, '.');
+        var query = queries.selectByPk({periodo: '2026-1c', materia: 'AlgoI'});
+        assert.match(query.text, /"materias"."denominacion" AS "materias\.denominacion"/);
     })
     it("leaves insert/update/delete untouched even when entityInfos is given", function(){
         var queries = createCrudQueries('cursos', entityInfos.cursos, entityInfos);
