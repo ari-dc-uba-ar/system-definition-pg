@@ -41,7 +41,21 @@ var mesas = defineEntity({
     },
     fields: {mesa: {type: 'text'}, presidente: {type: 'text'}, vocal: {type: 'text'}},
 })
-var entityDefs = defineEntities({materias, periodos, cursos, docentes, mesas});
+var personas = defineEntity({
+    pk: ['persona'],
+    fields: {
+        persona : {type: 'text'},
+        // a record can mark more than one field isName (e.g. a person's surname and first name)
+        apellido: {type: 'text', isName: true},
+        nombres : {type: 'text', isName: true},
+    },
+})
+var citas = defineEntity({
+    pk: ['cita'],
+    fks: {persona: {entity: 'personas', fields: {persona: 'persona'}}},
+    fields: {cita: {type: 'text'}, persona: {type: 'text'}},
+})
+var entityDefs = defineEntities({materias, periodos, cursos, docentes, mesas, personas, citas});
 var entityInfos = completeEntities(entityDefs);
 
 describe("createCrudQueries: referred isName joins", function(){
@@ -108,11 +122,60 @@ describe("createCrudQueries: referred isName joins", function(){
         var query = queries.selectByPk({periodo: '2026-1c', materia: 'AlgoI'});
         assert.match(query.text, /"materias"."denominacion" AS "materias\.denominacion"/);
     })
-    it("leaves insert/update/delete untouched even when entityInfos is given", function(){
+    it("brings every isName field of the target, not just the first", function(){
+        var queries = createCrudQueries('citas', entityInfos.citas, entityInfos);
+        var query = queries.selectByPk({cita: 'C1'});
+        assert.deepStrictEqual(query, {
+            text: 'SELECT "citas".*, "persona"."apellido" AS "persona__apellido", "persona"."nombres" AS "persona__nombres"'
+                + ' FROM "citas" LEFT JOIN "personas" AS "persona" ON "persona"."persona" = "citas"."persona"'
+                + ' WHERE "citas"."cita" = $1;',
+            values: ['C1'],
+        });
+    })
+    it("insert/update/delete stay exactly as before when entityInfos resolves no join for this entity", function(){
+        // periodos has no fks at all, so there's nothing to join even though entityInfos is given
+        var queries = createCrudQueries('periodos', entityInfos.periodos, entityInfos);
+        assert.deepStrictEqual(queries.insert({periodo: '2026-1c'}), {
+            text: 'INSERT INTO "periodos" ("periodo") VALUES ($1) RETURNING *;',
+            values: ['2026-1c'],
+        });
+        assert.deepStrictEqual(queries.deleteByPk({periodo: '2026-1c'}), {
+            text: 'DELETE FROM "periodos" WHERE "periodo" = $1 RETURNING *;',
+            values: ['2026-1c'],
+        });
+    })
+    it("wraps insert in a CTE so RETURNING also carries the joined names", function(){
         var queries = createCrudQueries('cursos', entityInfos.cursos, entityInfos);
-        assert.deepStrictEqual(queries.deleteByPk({periodo: '2026-1c', materia: 'AlgoI'}), {
-            text: 'DELETE FROM "cursos" WHERE "periodo" = $1 AND "materia" = $2 RETURNING *;',
+        var query = queries.insert({periodo: '2026-1c', materia: 'AlgoI'});
+        assert.deepStrictEqual(query, {
+            text: 'WITH "_mutated_row" AS (INSERT INTO "cursos" ("periodo", "materia") VALUES ($1, $2) RETURNING *)'
+                + ' SELECT "_mutated_row".*, "materias"."denominacion" AS "materias__denominacion"'
+                + ' FROM "_mutated_row" LEFT JOIN "materias" AS "materias" ON "materias"."materia" = "_mutated_row"."materia";',
             values: ['2026-1c', 'AlgoI'],
+        });
+    })
+    it("wraps updateByPk in a CTE, joining two fks to the same target entity", function(){
+        var queries = createCrudQueries('mesas', entityInfos.mesas, entityInfos);
+        var query = queries.updateByPk({mesa: 'M1'}, {presidente: 'D2'});
+        assert.deepStrictEqual(query, {
+            text: 'WITH "_mutated_row" AS (UPDATE "mesas" SET "presidente" = $1 WHERE "mesa" = $2 RETURNING *)'
+                + ' SELECT "_mutated_row".*, "presidente"."nombre" AS "presidente__nombre", "vocal"."nombre" AS "vocal__nombre"'
+                + ' FROM "_mutated_row"'
+                + ' LEFT JOIN "docentes" AS "presidente" ON "presidente"."docente" = "_mutated_row"."presidente"'
+                + ' LEFT JOIN "docentes" AS "vocal" ON "vocal"."docente" = "_mutated_row"."vocal";',
+            values: ['D2', 'M1'],
+        });
+    })
+    it("wraps deleteByPk in a CTE too", function(){
+        var queries = createCrudQueries('mesas', entityInfos.mesas, entityInfos);
+        var query = queries.deleteByPk({mesa: 'M1'});
+        assert.deepStrictEqual(query, {
+            text: 'WITH "_mutated_row" AS (DELETE FROM "mesas" WHERE "mesa" = $1 RETURNING *)'
+                + ' SELECT "_mutated_row".*, "presidente"."nombre" AS "presidente__nombre", "vocal"."nombre" AS "vocal__nombre"'
+                + ' FROM "_mutated_row"'
+                + ' LEFT JOIN "docentes" AS "presidente" ON "presidente"."docente" = "_mutated_row"."presidente"'
+                + ' LEFT JOIN "docentes" AS "vocal" ON "vocal"."docente" = "_mutated_row"."vocal";',
+            values: ['M1'],
         });
     })
 })

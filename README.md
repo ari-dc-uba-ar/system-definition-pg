@@ -78,9 +78,11 @@ app.get('/docentes/:id', async (req, res) => {
 
 ### Bringing in referenced names
 
-Pass the whole system's entities as a third argument and `selectByPk`/`selectWhere` will
-`LEFT JOIN` every fk whose target entity has a field marked `isName: true`, bringing that
-field along aliased as `"<fkName><separator><nameField>"` (separator defaults to `__`):
+Pass the whole system's entities as a third argument and every generator — `selectByPk`,
+`selectWhere`, and also `insert`/`updateByPk`/`deleteByPk`'s `RETURNING` — will `LEFT JOIN`
+every fk whose target entity has field(s) marked `isName: true`, bringing each of them along
+aliased as `"<fkName><separator><nameField>"` (separator defaults to `__`; a record can mark
+more than one field `isName`, e.g. a person's `apellido` and `nombres`):
 
 ```ts
 import { completeEntities, createCrudQueries } from "system-definition-pg";
@@ -101,8 +103,21 @@ entity — `mesas.presidente` and `mesas.vocal`, both → `docentes` — get dis
 column aliases (`presidente__nombre`, `vocal__nombre`); this also makes a reflexive fk (e.g.
 `docentes.jefe` → `docentes`) an unambiguous self-join. A fk whose target has no `isName`
 field (not every entity needs a human-readable name — `periodos` in the example above
-doesn't) is simply not joined. `entityInfos` is optional; without it, `selectByPk` and
-`selectWhere` behave exactly as before, regardless of `separator`.
+doesn't) is simply not joined. `entityInfos` is optional; without it, every generator
+behaves exactly as before, regardless of `separator`.
+
+`RETURNING` can only see the mutated table's own columns, so a plain `RETURNING *` can't
+join anything — when `insert`/`updateByPk`/`deleteByPk` do have a join to bring in, they
+wrap the statement as a `WITH ... AS (... RETURNING *) SELECT ... FROM ... LEFT JOIN ...`
+instead. It's still one round trip and one `SqlQuery`:
+
+```ts
+cursosQueries.updateByPk({periodo: '2026-1c', materia: 'AlgoI'}, {docente: 'D2'});
+// WITH "_mutated_row" AS (
+//   UPDATE "cursos" SET "docente" = $1 WHERE "periodo" = $2 AND "materia" = $3 RETURNING *
+// ) SELECT "_mutated_row".*, "materias"."denominacion" AS "materias__denominacion"
+// FROM "_mutated_row" LEFT JOIN "materias" AS "materias" ON "materias"."materia" = "_mutated_row"."materia";
+```
 
 This is a runtime-only convenience for now: `SqlQuery` still has no row type, so the joined
 columns aren't reflected in `Instance`/the function types yet — typing that (a shape that
