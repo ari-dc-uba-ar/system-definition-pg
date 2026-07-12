@@ -52,6 +52,8 @@ function referredNameJoins<TypeDefs extends TypeCollection>(
    entityInfos (optional) is the rest of the system: when given, selectByPk/selectWhere
    LEFT JOIN every fk whose target has isName field(s), bringing each of them along, aliased
    as "<fkName><separator><nameField>" (e.g. "materias__denominacion" for cursos.fks.materias).
+   selectWhere's filter also accepts those aliases as keys, filtering on the joined column
+   (e.g. {materias__denominacion: 'Algoritmos I'}) instead of a base entity field.
 
    RETURNING can only see the mutated table's own columns — it can't join. So instead of
    duplicating the join logic there, insert/updateByPk/deleteByPk fall back to RETURNING just
@@ -69,6 +71,13 @@ export function createCrudQueries<
     type PkValues = Pick<Instance, PkFields>
 
     var nameJoins = entityInfos ? referredNameJoins(entityInfo, entityInfos) : [];
+
+    // so selectWhere can also filter by a joined name (e.g. "materias__denominacion"),
+    // routed to its join's alias/column instead of the base table
+    var referredColumnsByAlias: Record<string, {fkName: string, nameField: string}> = {};
+    nameJoins.forEach(join => join.nameFields.forEach(nameField => {
+        referredColumnsByAlias[join.fkName + separator + nameField] = {fkName: join.fkName, nameField};
+    }));
 
     function pkConditions(values: unknown[], pkValues: PkValues): string[] {
         var pkRecord: Record<string, unknown> = pkValues;
@@ -116,13 +125,20 @@ export function createCrudQueries<
         return {text: 'SELECT ' + selectColumns() + ' FROM ' + selectFrom() + ' WHERE ' + conditions.join(' AND ') + ';', values};
     }
 
-    function selectWhere(filter: Partial<Instance> = {}): SqlQuery {
+    // "materias__denominacion" (when there's such a joined column) becomes "materias"."denominacion";
+    // any other key is the base entity's own field, qualified like every other base column
+    function filterColumn(name: string): string {
+        var referred = referredColumnsByAlias[name];
+        return referred ? quoteIdent(referred.fkName) + '.' + quoteIdent(referred.nameField) : qualify(name);
+    }
+
+    function selectWhere(filter: (Partial<Instance> & Record<string, unknown>) = {}): SqlQuery {
         var values: unknown[] = [];
         var conditions = Object.entries(filter)
             .filter(([, value]) => value !== undefined)
             .map(([name, value]) => value === null
-                ? qualify(name) + ' IS NULL'
-                : qualify(name) + ' = ' + placeholder(values, value));
+                ? filterColumn(name) + ' IS NULL'
+                : filterColumn(name) + ' = ' + placeholder(values, value));
         var whereClause = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
         return {text: 'SELECT ' + selectColumns() + ' FROM ' + selectFrom() + whereClause + ';', values};
     }

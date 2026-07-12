@@ -108,6 +108,16 @@ person's `apellido` and `nombres`): every one of them gets its own joined column
 `entityInfos` is optional; without it, every generator behaves exactly as before, regardless
 of `separator`.
 
+`selectWhere`'s filter also accepts those same aliases as keys, filtering on the joined
+column instead of a base entity field:
+
+```ts
+cursosQueries.selectWhere({materias__denominacion: 'Algoritmos I'});
+// SELECT "cursos".*, "materias"."denominacion" AS "materias__denominacion"
+// FROM "cursos" LEFT JOIN "materias" AS "materias" ON "materias"."materia" = "cursos"."materia"
+// WHERE "materias"."denominacion" = $1;
+```
+
 `RETURNING` can only see the mutated table's own columns — it can't join. So when
 `insert`/`updateByPk`/`deleteByPk` would otherwise need a join, they fall back to
 `RETURNING` just the pk instead of `*`; call `selectByPk` with that pk to get the same

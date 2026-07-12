@@ -88,6 +88,54 @@ describe("createCrudQueries: referred isName joins", function(){
             values: ['AlgoI'],
         });
     })
+    it("lets selectWhere filter by a joined isName column, routed to the joined table", function(){
+        var queries = createCrudQueries('cursos', entityInfos.cursos, entityInfos);
+        var query = queries.selectWhere({materias__denominacion: 'Algoritmos I'});
+        assert.deepStrictEqual(query, {
+            text: 'SELECT "cursos".*, "materias"."denominacion" AS "materias__denominacion"'
+                + ' FROM "cursos" LEFT JOIN "materias" AS "materias" ON "materias"."materia" = "cursos"."materia"'
+                + ' WHERE "materias"."denominacion" = $1;',
+            values: ['Algoritmos I'],
+        });
+    })
+    it("combines a base field and a joined isName filter in one WHERE, numbering placeholders in order", function(){
+        var queries = createCrudQueries('cursos', entityInfos.cursos, entityInfos);
+        var query = queries.selectWhere({periodo: '2026-1c', materias__denominacion: 'Algoritmos I'});
+        assert.deepStrictEqual(query, {
+            text: 'SELECT "cursos".*, "materias"."denominacion" AS "materias__denominacion"'
+                + ' FROM "cursos" LEFT JOIN "materias" AS "materias" ON "materias"."materia" = "cursos"."materia"'
+                + ' WHERE "cursos"."periodo" = $1 AND "materias"."denominacion" = $2;',
+            values: ['2026-1c', 'Algoritmos I'],
+        });
+    })
+    it("renders a null joined-column filter as IS NULL too", function(){
+        var queries = createCrudQueries('cursos', entityInfos.cursos, entityInfos);
+        var query = queries.selectWhere({materias__denominacion: null});
+        assert.deepStrictEqual(query, {
+            text: 'SELECT "cursos".*, "materias"."denominacion" AS "materias__denominacion"'
+                + ' FROM "cursos" LEFT JOIN "materias" AS "materias" ON "materias"."materia" = "cursos"."materia"'
+                + ' WHERE "materias"."denominacion" IS NULL;',
+            values: [],
+        });
+    })
+    it("filters by every isName field of a target with more than one, using each's own alias", function(){
+        var queries = createCrudQueries('citas', entityInfos.citas, entityInfos);
+        var query = queries.selectWhere({persona__apellido: 'Perez', persona__nombres: 'Juan'});
+        assert.deepStrictEqual(query, {
+            text: 'SELECT "citas".*, "persona"."apellido" AS "persona__apellido", "persona"."nombres" AS "persona__nombres"'
+                + ' FROM "citas" LEFT JOIN "personas" AS "persona" ON "persona"."persona" = "citas"."persona"'
+                + ' WHERE "persona"."apellido" = $1 AND "persona"."nombres" = $2;',
+            values: ['Perez', 'Juan'],
+        });
+    })
+    it("without entityInfos, a joined-alias-shaped filter key is just treated as a base column name", function(){
+        var queries = createCrudQueries('cursos', entityInfos.cursos);
+        var query = queries.selectWhere({materias__denominacion: 'Algoritmos I'});
+        assert.deepStrictEqual(query, {
+            text: 'SELECT * FROM "cursos" WHERE "materias__denominacion" = $1;',
+            values: ['Algoritmos I'],
+        });
+    })
     it("gives two fks to the same target entity distinct join aliases and column aliases", function(){
         var queries = createCrudQueries('mesas', entityInfos.mesas, entityInfos);
         var query = queries.selectByPk({mesa: 'M1'});
