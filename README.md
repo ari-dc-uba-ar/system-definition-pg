@@ -44,6 +44,39 @@ Every identifier (table and column name) is double-quoted unconditionally, so re
 words, mixed case and non-ASCII letters (e.g. `año`, `día`) all work without special-casing.
 
 
+## CRUD queries
+
+`createCrudQueries(tableName, entityInfo)` builds `select`/`insert`/`update`/`delete` query
+generators for one entity, typed against its fields. Every generator returns a plain
+`SqlQuery` (`{text, values}`) — nothing is interpolated into the SQL text, every dynamic
+value is a `$n` placeholder — so the result can be handed to any driver that accepts
+`(text, values)` (`pg`, `postgres.js`, ...), whether that's inside an HTTP endpoint handler
+or anywhere else in the program:
+
+```ts
+import { createCrudQueries } from "system-definition-pg";
+import { completeEntity } from "system-definition";
+import { docentes } from "./my-system";
+
+const docentesQueries = createCrudQueries('docentes', completeEntity(docentes));
+
+app.get('/docentes/:id', async (req, res) => {
+    const { text, values } = docentesQueries.selectByPk({docente: req.params.id});
+    const { rows } = await pool.query(text, values);
+    res.json(rows[0]);
+});
+```
+
+* `selectByPk(pk)` — one row by its (possibly composite) primary key.
+* `selectWhere(filter?)` — rows matching an equality filter on any subset of fields
+  (`null` renders as `IS NULL`); no filter (or `{}`) selects everything.
+* `insert(record)` — `INSERT ... RETURNING *`. Fields left `undefined` are omitted from the
+  statement, so a column `DEFAULT` (e.g. a serial pk) can still apply.
+* `updateByPk(pk, changes)` — `UPDATE ... RETURNING *`, setting only the fields present in
+  `changes`; throws if `changes` has nothing to set.
+* `deleteByPk(pk)` — `DELETE ... RETURNING *`.
+
+
 ## Design decisions
 
 * **Domain type → PostgreSQL type mapping is not part of system-definition.** A
@@ -59,18 +92,23 @@ words, mixed case and non-ASCII letters (e.g. `año`, `día`) all work without s
   `uk_materias_denominacion`), derived from the table name and the `fk`/`uk` key in the
   entity definition, so two fks to the same target entity (e.g. `mesas.presidente` and
   `mesas.vocal`, both → `docentes`) get distinct constraint names.
+* **CRUD queries are pure builders, not an executable driver.** `createCrudQueries` never
+  imports a database driver and never opens a connection; it only returns `{text, values}`.
+  That keeps it usable both directly in a program and behind an HTTP endpoint, and testable
+  without a running database — this repo's own CRUD tests assert on the returned SQL and
+  values only, no live Postgres involved.
 
 
 ## Structure
 
 * `src/`: the generator — `quoting.ts` (identifier/literal escaping), `pg-type-map.ts` (the
-  `PgTypeMap` type), `generate-schema.ts` (the statement generators), `index.ts` (public
-  exports).
+  `PgTypeMap` type), `generate-schema.ts` (DDL statement generators), `sql-query.ts` (the
+  `SqlQuery` type), `crud-queries.ts` (`createCrudQueries`), `index.ts` (public exports).
 * `examples/aida/`: uses the `aida` example system shipped with `system-definition` to
   generate `examples/aida/aida-baseline.psql`, a full, real-world-shaped baseline script.
   Run `npm run generate-baseline` to regenerate it.
-* `test/`: mocha tests for each generator piece, plus a snapshot test that regenerates the
-  aida script and diffs it against the committed baseline.
+* `test/`: mocha tests for each generator piece (DDL and CRUD), plus a snapshot test that
+  regenerates the aida script and diffs it against the committed baseline.
 
 
 ## Development
