@@ -1,32 +1,35 @@
 import * as assert from "assert";
-import { commonTypeDefs, defineEntities, defineEntity } from "system-definition";
+import { defineEntities, defineEntity, defineRecord, withRecords } from "system-definition";
 
 import { PgTypeMap } from "../src/pg-type-map";
 import { generateDatabaseScript } from "../src/generate-schema";
+import { testPgTypeMap, testTypes } from "./test-system";
 
-var pgTypeMap: PgTypeMap<typeof commonTypeDefs> = {
-    text: 'text',
-    integer: 'integer',
-    boolean: 'boolean',
-}
+var pgTypeMap: PgTypeMap<typeof testTypes> = testPgTypeMap;
 
 describe("generateDatabaseScript", function(){
     it("assembles CREATE TABLEs, then fks, then comments, in that order", function(){
-        var materias = defineEntity({
-            pk: ['materia'],
-            uks: {denominacion: ['denominacion']},
-            fields: {
+        var context = withRecords(testTypes, {
+            materia: defineRecord(testTypes, {
                 materia     : {type: 'text'},
                 denominacion: {type: 'text', description: 'nombre público de la materia'},
-            },
+            }),
+            curso: defineRecord(testTypes, {periodo: {type: 'text'}, materia: {type: 'text'}}),
         });
-        var cursos = defineEntity({
+        var materias = defineEntity(context, {
+            name: 'materias',
+            record: 'materia',
+            pk: ['materia'],
+            uks: {denominacion: ['denominacion']},
+        });
+        var cursos = defineEntity(context, {
+            name: 'cursos',
+            record: 'curso',
             pk: ['periodo', 'materia'],
             fks: {materias: {entity: 'materias', fields: materias.pk}},
-            fields: {periodo: {type: 'text'}, materia: {type: 'text'}},
         });
         var entityDefs = defineEntities({materias, cursos});
-        var script = generateDatabaseScript(entityDefs, pgTypeMap);
+        var script = generateDatabaseScript(context, entityDefs, pgTypeMap);
 
         var createTableIdx = script.indexOf('CREATE TABLE "materias"');
         var alterTableIdx = script.indexOf('ALTER TABLE "cursos"');
@@ -37,11 +40,14 @@ describe("generateDatabaseScript", function(){
         assert.ok(script.endsWith('\n'));
     })
     it("produces a script with no fk or comment sections when none are needed", function(){
-        var periodos = defineEntity({pk: ['periodo'], fields: {periodo: {type: 'text'}}});
+        var context = withRecords(testTypes, {
+            periodo: defineRecord(testTypes, {periodo: {type: 'text'}}),
+        });
+        var periodos = defineEntity(context, {name: 'periodos', record: 'periodo', pk: ['periodo']});
         var entityDefs = defineEntities({periodos});
-        var script = generateDatabaseScript(entityDefs, pgTypeMap);
+        var script = generateDatabaseScript(context, entityDefs, pgTypeMap);
         assert.equal(script,
-            'CREATE TABLE "periodos" (\n    "periodo" text,\n    PRIMARY KEY ("periodo")\n);\n'
+            'CREATE TABLE "periodos" (\n    "periodo" text NOT NULL,\n    PRIMARY KEY ("periodo")\n);\n'
         );
     })
 })

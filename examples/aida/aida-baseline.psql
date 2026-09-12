@@ -1,5 +1,5 @@
 CREATE TABLE "docentes" (
-    "docente" text,
+    "docente" text NOT NULL,
     "apellido" text NOT NULL,
     "nombres" text NOT NULL,
     "cargo" text,
@@ -10,35 +10,35 @@ CREATE TABLE "docentes" (
 );
 
 CREATE TABLE "materias" (
-    "materia" text,
+    "materia" text NOT NULL,
     "denominacion" text NOT NULL,
     PRIMARY KEY ("materia"),
     CONSTRAINT "uk_materias_denominacion" UNIQUE ("denominacion")
 );
 
 CREATE TABLE "periodos" (
-    "periodo" text,
+    "periodo" text NOT NULL,
     PRIMARY KEY ("periodo")
 );
 
 CREATE TABLE "cursos" (
-    "periodo" text,
-    "materia" text,
+    "periodo" text NOT NULL,
+    "materia" text NOT NULL,
     "docente" text,
     PRIMARY KEY ("periodo", "materia")
 );
 
 CREATE TABLE "clases" (
-    "periodo" text,
-    "materia" text,
-    "orden" integer,
+    "periodo" text NOT NULL,
+    "materia" text NOT NULL,
+    "orden" integer NOT NULL,
     "fecha" date,
     "tema" text,
     PRIMARY KEY ("periodo", "materia", "orden")
 );
 
 CREATE TABLE "alumnos" (
-    "alumno" text,
+    "alumno" text NOT NULL,
     "apellido" text NOT NULL,
     "nombres" text NOT NULL,
     "email" text,
@@ -46,10 +46,10 @@ CREATE TABLE "alumnos" (
 );
 
 CREATE TABLE "preguntas" (
-    "periodo" text,
-    "materia" text,
-    "orden" integer,
-    "pregunta" integer,
+    "periodo" text NOT NULL,
+    "materia" text NOT NULL,
+    "orden" integer NOT NULL,
+    "pregunta" integer NOT NULL,
     "formulacion" text NOT NULL,
     "aclaraciones" text,
     "tipo_respuesta" text NOT NULL,
@@ -57,34 +57,34 @@ CREATE TABLE "preguntas" (
 );
 
 CREATE TABLE "opciones" (
-    "periodo" text,
-    "materia" text,
-    "orden" integer,
-    "pregunta" integer,
-    "opcion" text,
+    "periodo" text NOT NULL,
+    "materia" text NOT NULL,
+    "orden" integer NOT NULL,
+    "pregunta" integer NOT NULL,
+    "opcion" text NOT NULL,
     "detalle" text,
     PRIMARY KEY ("periodo", "materia", "orden", "pregunta", "opcion")
 );
 
 CREATE TABLE "inscripciones" (
-    "periodo" text,
-    "materia" text,
-    "alumno" text,
+    "periodo" text NOT NULL,
+    "materia" text NOT NULL,
+    "alumno" text NOT NULL,
     PRIMARY KEY ("periodo", "materia", "alumno")
 );
 
 CREATE TABLE "presencias" (
-    "periodo" text,
-    "materia" text,
-    "alumno" text,
-    "orden" integer,
+    "periodo" text NOT NULL,
+    "materia" text NOT NULL,
+    "alumno" text NOT NULL,
+    "orden" integer NOT NULL,
     PRIMARY KEY ("periodo", "materia", "alumno", "orden")
 );
 
 CREATE TABLE "mesas" (
-    "periodo" text,
-    "materia" text,
-    "fecha" date,
+    "periodo" text NOT NULL,
+    "materia" text NOT NULL,
+    "fecha" date NOT NULL,
     "presidente" text,
     "vocal" text,
     PRIMARY KEY ("periodo", "materia", "fecha")

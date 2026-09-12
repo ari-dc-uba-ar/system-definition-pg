@@ -5,40 +5,66 @@ Generates a PostgreSQL database-creation script (`.psql`) from a system describe
 
 `system-definition` only covers the descriptive side of a system (domain types, fields,
 records, entities, primary/foreign/unique keys) — it doesn't generate anything itself. This
-module is one generator built on top of it: given a system's `entityDefs` and a mapping from
-its domain types to PostgreSQL types, it produces the `CREATE TABLE`, `ALTER TABLE ... ADD
-CONSTRAINT` (foreign keys) and `COMMENT ON COLUMN` statements needed to create the database.
+module is one generator built on top of it: given a system's context, its `entityDefs` and a
+mapping from its domain types to PostgreSQL types, it produces the `CREATE TABLE`, `ALTER
+TABLE ... ADD CONSTRAINT` (foreign keys) and `COMMENT ON COLUMN` statements needed to create
+the database.
 
 
 ## Usage
 
 ```ts
 import { generateDatabaseScript, PgTypeMap } from "system-definition-pg";
-import { entityDefs, typeDefs } from "./my-system";
+import { myContext, entityDefs } from "./my-system";
 
-const pgTypeMap: PgTypeMap<typeof typeDefs> = {
+const pgTypeMap: PgTypeMap<typeof myContext> = {
     text: 'text',
     integer: 'integer',
     boolean: 'boolean',
-    // ...one PostgreSQL type per domain type declared in typeDefs
+    // ...one PostgreSQL type per domain type declared in the context, exhaustively
 };
 
-const script = generateDatabaseScript(entityDefs, pgTypeMap);
+const script = generateDatabaseScript(myContext, entityDefs, pgTypeMap);
 // write `script` to a .psql file, or feed it to `psql -f`
 ```
 
+Every entry point takes the system's **context** first, the same way `system-definition`'s own
+`defineEntity`/`completeEntity` do. Nothing reads it at runtime: it is what tells the compiler
+which domain types the system has (so `PgTypeMap` is checked exhaustive and each field's type
+is a key of it) and what a completed field of that system carries — see
+[What this generator requires of a system](#what-this-generator-requires-of-a-system).
+
 `generateDatabaseScript` is composed of smaller, independently usable pieces:
 
-* `generateCreateTableStatement(tableName, entityInfo, pgTypeMap)` — columns (with `NOT
-  NULL` where the field isn't nullable), the `PRIMARY KEY` and any `uks` as named `UNIQUE`
-  constraints.
-* `generateForeignKeyStatements(tableName, entityInfo)` — one `ALTER TABLE ... ADD
+* `generateCreateTableStatement(context, entityInfo, pgTypeMap)` — columns (with `NOT NULL`
+  where the field isn't nullable, which includes every field of the primary key), the
+  `PRIMARY KEY` and any `uks` as named `UNIQUE` constraints.
+* `generateForeignKeyStatements(context, entityInfo)` — one `ALTER TABLE ... ADD
   CONSTRAINT ... FOREIGN KEY` per `fk`. Foreign keys are always emitted as `ALTER TABLE`
   statements *after* every table has been created, so table creation order never matters —
   this also covers reflexive fks (an entity referencing itself, e.g. an employee's manager)
   and forward references without any topological sort.
-* `generateCommentStatements(tableName, entityInfo)` — a `COMMENT ON COLUMN` for every field
+* `generateCommentStatements(context, entityInfo)` — a `COMMENT ON COLUMN` for every field
   that has a non-empty `description`.
+
+The table and column names are not parameters: an `EntityInfo` and a `FieldInfo` each carry
+their own `name`.
+
+
+## What this generator requires of a system
+
+`system-definition`'s core field info is only `{name, type, nullable}` — the little the SSOT
+itself reads. Everything else a field may carry is declared by each system in its own field
+def and filled in by its own `completeField`. This generator reads two of those:
+
+* `description` — the text of the `COMMENT ON COLUMN`.
+* `isName` — which field(s) name a row, so a fk pointing at that entity can bring the name
+  along (see [Bringing in referenced names](#bringing-in-referenced-names)).
+
+So it has to say so, and it does, in `PgContext` (`src/pg-context.ts`): a context whose
+`completeField` returns at least `{...core, isName: boolean, description: string}`. A system
+that doesn't complete those doesn't compile, and the error names the missing property. It is
+the mirror image of `defineTypes`, which is the gate on the description side.
 
 Every identifier (table and column name) is double-quoted unconditionally, so reserved
 words, mixed case and non-ASCII letters (e.g. `año`, `día`) all work without special-casing.
@@ -46,7 +72,7 @@ words, mixed case and non-ASCII letters (e.g. `año`, `día`) all work without s
 
 ## CRUD queries
 
-`createCrudQueries(tableName, entityInfo)` builds `select`/`insert`/`update`/`delete` query
+`createCrudQueries(context, entityInfo)` builds `select`/`insert`/`update`/`delete` query
 generators for one entity, typed against its fields. Every generator returns a plain
 `SqlQuery` (`{text, values}`) — nothing is interpolated into the SQL text, every dynamic
 value is a `$n` placeholder — so the result can be handed to any driver that accepts
@@ -56,9 +82,9 @@ or anywhere else in the program:
 ```ts
 import { createCrudQueries } from "system-definition-pg";
 import { completeEntity } from "system-definition";
-import { docentes } from "./my-system";
+import { myContext, docentes } from "./my-system";
 
-const docentesQueries = createCrudQueries('docentes', completeEntity(docentes));
+const docentesQueries = createCrudQueries(myContext, completeEntity(myContext, docentes));
 
 app.get('/docentes/:id', async (req, res) => {
     const { text, values } = docentesQueries.selectByPk({docente: req.params.id});
@@ -86,11 +112,11 @@ more than one field `isName`, e.g. a person's `apellido` and `nombres`):
 
 ```ts
 import { completeEntities, createCrudQueries } from "system-definition-pg";
-import { entityDefs } from "./my-system"; // cursos.fks.materias -> materias, and materias.denominacion has isName: true
+import { myContext, entityDefs } from "./my-system"; // cursos.fks.materias -> materias, and materias.denominacion has isName: true
 
-const entityInfos = completeEntities(entityDefs);
-const cursosQueries = createCrudQueries('cursos', entityInfos.cursos, entityInfos);
-// createCrudQueries(tableName, entityInfo, entityInfos?, separator = '__')
+const entityInfos = completeEntities(myContext, entityDefs);
+const cursosQueries = createCrudQueries(myContext, entityInfos.cursos, entityInfos);
+// createCrudQueries(context, entityInfo, entityInfos?, separator = '__')
 
 const { text, values } = cursosQueries.selectByPk({periodo: '2026-1c', materia: 'AlgoI'});
 // SELECT "cursos".*, "materias"."denominacion" AS "materias__denominacion"
@@ -144,8 +170,13 @@ depends on which fks resolve to a name at the value level) is left for later.
 * **Domain type → PostgreSQL type mapping is not part of system-definition.** A
   `TypeCollection` only carries the TypeScript side of a domain type (`tsType`); the SQL
   side is a separate concern decided by whoever generates the database, hence the standalone
-  `PgTypeMap<TypeDefs>` type (`Record<keyof TypeDefs, string>`) that this module expects as
-  input alongside `entityDefs`.
+  `PgTypeMap<TContext>` type (`Record<keyof TContext['types'], string>`) that this module
+  expects as input alongside the context and `entityDefs`. It is exhaustive: a system that
+  adds a domain type doesn't compile until it says how to store it.
+* **The generator declares what it needs of a system, instead of assuming it.** `description`
+  and `isName` are not part of the framework's core field info, so `PgContext` requires them
+  explicitly (see above). Reading them off a context that doesn't promise them is what would
+  make a generator silently emit nothing.
 * **Foreign keys are always `ALTER TABLE`, never inline.** This keeps `CREATE TABLE`
   statement order irrelevant and makes reflexive and circular references trivial to support.
 * **`label` is not rendered.** It's meant for UI generators; only `description` becomes a
@@ -163,8 +194,9 @@ depends on which fks resolve to a name at the value level) is left for later.
 
 ## Structure
 
-* `src/`: the generator — `quoting.ts` (identifier/literal escaping), `pg-type-map.ts` (the
-  `PgTypeMap` type), `entity-infos.ts` (`completeEntities`, the `EntityInfoMap` type),
+* `src/`: the generator — `quoting.ts` (identifier/literal escaping), `pg-context.ts` (what
+  this generator requires of a system's context), `pg-type-map.ts` (the `PgTypeMap` type),
+  `entity-infos.ts` (`completeEntities`, the `EntityInfoMap` type),
   `generate-schema.ts` (DDL statement generators), `sql-query.ts` (the `SqlQuery` type),
   `crud-queries.ts` (`createCrudQueries`), `index.ts` (public exports).
 * `examples/aida/`: uses the `aida` example system shipped with `system-definition` to
@@ -172,7 +204,8 @@ depends on which fks resolve to a name at the value level) is left for later.
   Run `npm run generate-baseline` to regenerate it.
 * `test/`: mocha tests for each generator piece (DDL and CRUD, including the referred-name
   joins), plus a snapshot test that regenerates the aida script and diffs it against the
-  committed baseline.
+  committed baseline. `test/test-system.ts` is the little system the tests describe their
+  fixtures with — they need one, because the generator does not accept just any context.
 
 
 ## Development

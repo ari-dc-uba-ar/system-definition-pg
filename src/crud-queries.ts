@@ -1,6 +1,7 @@
-import { EntityInfo, RecordInfo, TypeCollection } from "system-definition";
+import { EntityInfo, RecordInfo } from "system-definition";
 
 import { EntityInfoMap } from "./entity-infos";
+import { PgContext } from "./pg-context";
 import { quoteIdent } from "./quoting";
 import { SqlQuery } from "./sql-query";
 
@@ -13,13 +14,13 @@ function placeholder(values: unknown[], value: unknown): string {
    completeEntity's output is a RecordInfo: same 'type' per field, isName widened from the
    literal 'true' to boolean, which RecordDef doesn't accept. This is the RecordInfo
    equivalent: it only needs the 'type' of each field, so it works for both. */
-export type InstanceType<TypeDefs extends TypeCollection, TFields extends RecordInfo<TypeDefs>> = {
-    [K in keyof TFields]: TypeDefs[TFields[K]['type']]['tsType']
+export type InstanceType<TContext extends PgContext<TContext>, TFields extends RecordInfo<TContext>> = {
+    [K in keyof TFields]: TContext['types'][TFields[K]['type']]['tsType']
 }
 
 // a record can mark more than one field isName (e.g. "apellido" and "nombres" both naming a person)
-function nameFieldsOf<TypeDefs extends TypeCollection>(fields: RecordInfo<TypeDefs>): string[] {
-    return Object.entries(fields).filter(([, field]) => field.isName).map(([name]) => name);
+function nameFieldsOf<TContext extends PgContext<TContext>>(fields: RecordInfo<TContext>): string[] {
+    return Object.values(fields).filter(field => field.isName).map(field => field.name);
 }
 
 type ReferredNameJoin = {
@@ -34,18 +35,21 @@ type ReferredNameJoin = {
    two fks to the same target, e.g. mesas.presidente / mesas.vocal -> docentes). fks whose
    target isn't in entityInfos, or whose target has no isName field, are silently skipped:
    not every entity has a human-readable name field (e.g. a pure join table might not). */
-function referredNameJoins<TypeDefs extends TypeCollection>(
-    entityInfo: EntityInfo<TypeDefs>, entityInfos: EntityInfoMap<TypeDefs>
+function referredNameJoins<TContext extends PgContext<TContext>>(
+    entityInfo: EntityInfo<TContext>, entityInfos: EntityInfoMap<TContext>
 ): ReferredNameJoin[] {
     return Object.entries(entityInfo.fks).flatMap(([fkName, fk]) => {
         var target = entityInfos[fk.entity];
-        var nameFields = target ? nameFieldsOf(target.fields) : [];
+        var nameFields = target ? nameFieldsOf<TContext>(target.fields) : [];
         return nameFields.length > 0 ? [{fkName, targetTable: fk.entity, nameFields, sourceToTargetFields: fk.fields}] : [];
     });
 }
 
-/* given an entity's Info (completeEntity(entityDef)), builds the select/insert/update/delete
-   query generators for it. Every value goes through a $n placeholder: nothing is
+/* given the system's context and an entity's Info (completeEntity(context, entityDef)), builds
+   the select/insert/update/delete query generators for it; the table is the entity's own name.
+   The context is not read at runtime: it is what lets the compiler know which types the system
+   has, so the instance type of a row comes out with the real tsType of each field instead of
+   unknown. Every value goes through a $n placeholder: nothing is
    interpolated into the SQL text, so the result is safe to run as-is against any driver
    that accepts (text, values), inside a program or behind an HTTP endpoint.
 
@@ -63,14 +67,15 @@ function referredNameJoins<TypeDefs extends TypeCollection>(
    result is left for later: for now this is a runtime-only convenience, same as every other
    query built here (SqlQuery has no row type). */
 export function createCrudQueries<
-    TypeDefs extends TypeCollection,
-    const TEntityInfo extends EntityInfo<TypeDefs>,
->(tableName: string, entityInfo: TEntityInfo, entityInfos?: EntityInfoMap<TypeDefs>, separator: string = '__') {
-    type Instance = InstanceType<TypeDefs, TEntityInfo['fields']>
+    TContext extends PgContext<TContext>,
+    const TEntityInfo extends EntityInfo<TContext>,
+>(_context: TContext, entityInfo: TEntityInfo, entityInfos?: EntityInfoMap<TContext>, separator: string = '__') {
+    type Instance = InstanceType<TContext, TEntityInfo['fields']>
     type PkFields = TEntityInfo['pk'][number] & keyof Instance
     type PkValues = Pick<Instance, PkFields>
 
-    var nameJoins = entityInfos ? referredNameJoins(entityInfo, entityInfos) : [];
+    var tableName = entityInfo.name;
+    var nameJoins = entityInfos ? referredNameJoins<TContext>(entityInfo, entityInfos) : [];
 
     // so selectWhere can also filter by a joined name (e.g. "materias__denominacion"),
     // routed to its join's alias/column instead of the base table
@@ -132,7 +137,8 @@ export function createCrudQueries<
         return referred ? quoteIdent(referred.fkName) + '.' + quoteIdent(referred.nameField) : qualify(name);
     }
 
-    function selectWhere(filter: (Partial<Instance> & Record<string, unknown>) = {}): SqlQuery {
+    // null is a value the filter accepts on purpose: it becomes IS NULL, without a placeholder
+    function selectWhere(filter: ({[K in keyof Instance]?: Instance[K] | null} & Record<string, unknown>) = {}): SqlQuery {
         var values: unknown[] = [];
         var conditions = Object.entries(filter)
             .filter(([, value]) => value !== undefined)
@@ -181,5 +187,5 @@ export function createCrudQueries<
     return {selectByPk, selectWhere, insert, updateByPk, deleteByPk};
 }
 
-export type CrudQueries<TypeDefs extends TypeCollection, TEntityInfo extends EntityInfo<TypeDefs>> =
-    ReturnType<typeof createCrudQueries<TypeDefs, TEntityInfo>>
+export type CrudQueries<TContext extends PgContext<TContext>, TEntityInfo extends EntityInfo<TContext>> =
+    ReturnType<typeof createCrudQueries<TContext, TEntityInfo>>
