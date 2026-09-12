@@ -1,12 +1,12 @@
 import * as fs from "fs";
 import * as path from "path";
-import { entityDefs } from "system-definition/examples";
+import { aida, entityDefs } from "system-definition/examples";
 
 import { generateDatabaseScript } from "../../src/generate-schema";
 import { aidaPgTypeMap } from "./pg-type-map";
 
 export function generateAidaScript(): string {
-    return generateDatabaseScript(entityDefs, aidaPgTypeMap);
+    return generateDatabaseScript(aida, entityDefs, aidaPgTypeMap);
 }
 
 export var baselinePath = path.join(__dirname, '..', '..', '..', 'examples', 'aida', 'aida-baseline.psql');

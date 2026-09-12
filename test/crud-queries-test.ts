@@ -1,27 +1,27 @@
 import * as assert from "assert";
-import { commonTypeDefs, completeEntity, defineEntity } from "system-definition";
+import { completeEntity, defineEntity, defineRecord, withRecords } from "system-definition";
 
 import { createCrudQueries } from "../src/crud-queries";
+import { testTypes } from "./test-system";
 
-var materias = defineEntity({
-    pk: ['materia'],
-    fields: {
+var context = withRecords(testTypes, {
+    materia: defineRecord(testTypes, {
         materia     : {type: 'text'},
         denominacion: {type: 'text'},
         creditos    : {type: 'integer'},
-    },
-})
-var materiasQueries = createCrudQueries('materias', completeEntity(materias));
-
-var cursos = defineEntity({
-    pk: ['periodo', 'materia'],
-    fields: {
+    }),
+    curso: defineRecord(testTypes, {
         periodo : {type: 'text'},
         materia : {type: 'text'},
         docente : {type: 'text'},
-    },
+    }),
 })
-var cursosQueries = createCrudQueries('cursos', completeEntity(cursos));
+
+var materias = defineEntity(context, {name: 'materias', record: 'materia', pk: ['materia']})
+var materiasQueries = createCrudQueries(context, completeEntity(context, materias));
+
+var cursos = defineEntity(context, {name: 'cursos', record: 'curso', pk: ['periodo', 'materia']})
+var cursosQueries = createCrudQueries(context, completeEntity(context, cursos));
 
 describe("createCrudQueries: selectByPk", function(){
     it("builds a WHERE with a single placeholder for a simple pk", function(){
@@ -55,7 +55,7 @@ describe("createCrudQueries: selectWhere", function(){
         });
     })
     it("renders a null filter value as IS NULL, without consuming a placeholder", function(){
-        var query = materiasQueries.selectWhere({denominacion: null as unknown as string, creditos: 6});
+        var query = materiasQueries.selectWhere({denominacion: null, creditos: 6});
         assert.deepStrictEqual(query, {
             text: 'SELECT * FROM "materias" WHERE "denominacion" IS NULL AND "creditos" = $1;',
             values: [6],
