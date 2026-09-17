@@ -1,7 +1,7 @@
 {
   "name": "system-definition-pg",
   "description": "Generates PostgreSQL database creation scripts from system-definition descriptions",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "repository": "ari-dc-uba-ar/system-definition-pg",
   "main": "dist/src/index.js",
