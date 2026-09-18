@@ -19,7 +19,8 @@
   "scripts": {
     "build": "tsc",
     "test": "tsc && mocha --exit --node-option enable-source-maps dist/test/",
-    "test-ci": "npm run test",
+    "coverage": "tsc && c8 mocha --exit --node-option enable-source-maps dist/test/",
+    "test-ci": "npm run coverage",
     "generate-baseline": "tsc && node dist/examples/aida/generate-baseline.js"
   },
   "dependencies": {
@@ -28,6 +29,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^26.6.1",
+    "c8": "^12.0.0",
     "mocha": "^12.0.2",
     "qa-control": "^0.11.3",
     "typescript": "^7.0.2"
