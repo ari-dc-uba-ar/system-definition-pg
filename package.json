@@ -1,7 +1,7 @@
 {
   "name": "system-definition-pg",
   "description": "Generates PostgreSQL database creation scripts from system-definition descriptions",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "license": "MIT",
   "repository": "ari-dc-uba-ar/system-definition-pg",
   "main": "dist/src/index.js",
@@ -24,7 +24,7 @@
     "generate-baseline": "tsc && node dist/examples/aida/generate-baseline.js"
   },
   "dependencies": {
-    "system-definition": "^0.2.0"
+    "system-definition": "^0.3.0"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

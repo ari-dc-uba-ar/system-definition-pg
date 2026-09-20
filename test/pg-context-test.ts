@@ -1,7 +1,8 @@
 import * as assert from "assert";
 import {
-    CoreFieldDef, EntityInfo, EntityInfoOf, boxType, commonTypeDefs, completeCoreField,
-    completeEntity, defineEntities, defineEntity, defineRecord, defineTypes, withRecords,
+    CoreFieldDef, EntityInfo, EntityInfoOf, boxType, commonTypeBehaviours, commonTypeDefs,
+    completeCoreField, completeEntity, defineEntities, defineEntity, defineRecord, defineTypes,
+    withRecords,
 } from "system-definition";
 import { aida, cursos, entityDefs } from "system-definition/examples";
 
@@ -17,6 +18,7 @@ type IsAssignable<A, B> = [A] extends [B] ? true : false
 var poorTypes = {text: {tsType: boxType<string>()}}
 var poor = withRecords(defineTypes({
     types: poorTypes,
+    behaviours: {text: commonTypeBehaviours.text},
     completeField: (fieldDef: CoreFieldDef<typeof poorTypes>, name: string) => completeCoreField(fieldDef, name),
 }), {})
 
