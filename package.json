@@ -18,6 +18,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "prepare": "npm run build",
     "test": "tsc && mocha --exit --node-option enable-source-maps dist/test/",
     "coverage": "tsc && c8 mocha --exit --node-option enable-source-maps dist/test/",
     "test-ci": "npm run coverage",
