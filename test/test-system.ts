@@ -1,4 +1,4 @@
-import { CoreFieldDef, commonTypeDefs, completeCoreField, defineTypes } from "system-definition";
+import { CoreFieldDef, commonTypeBehaviours, commonTypeDefs, completeCoreField, defineTypes } from "system-definition";
 
 /* the fixture the tests describe their little systems with. It exists because the generator
    does not accept just any context: it needs a field info carrying description and isName
@@ -11,6 +11,7 @@ export type TestFieldDef = CoreFieldDef<typeof commonTypeDefs> & {
 
 export const testTypes = defineTypes({
     types: commonTypeDefs,
+    behaviours: commonTypeBehaviours,
     completeField: (fieldDef: TestFieldDef, name: string) => ({
         ...completeCoreField(fieldDef, name),
         isName     : fieldDef.isName ?? false,
